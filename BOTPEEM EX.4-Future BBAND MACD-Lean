@@ -1,0 +1,294 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © PeeMMiumm
+
+//@version=4
+strategy("BOTPEEM EX.4-Future BBAND MACD-Lean", overlay=true, default_qty_type = strategy.cash , currency = currency.USD , initial_capital = 100000 , commission_type = strategy.commission.percent,commission_value = 0.02, process_orders_on_close=true,calc_on_every_tick= true ,calc_on_order_fills =true )
+//TIME
+TIME_NOW = time
+//plotchar(TIME_NOW,"timenow")
+plot(timenow, display=display.none)
+
+// >> ON-OFF  LONG-SHORT
+ONOFF_LONG  = input( title = "ON_LONG" , type = input.bool , defval = true , group = "ON=OFF")
+ONOFF_SHORT = input( title = "ON_SHORT" , type = input.bool , defval = true , group = "ON=OFF")
+
+// >> ON-OFF  INDICATOR
+ONOFF_EMA_MIDDLE    = input( title = "ON_EMA_MID"       , type = input.bool , defval = true , group = "ON=OFF-INDICATOR")
+ONOFF_BB_Basis      = input( title = "ON_BB_Basis"      , type = input.bool , defval = false , group = "ON=OFF-INDICATOR")
+ONOFF_TLS           = input( title = "ON_TLS"           , type = input.bool , defval = true , group = "ON=OFF-INDICATOR")
+ONOFF_TIME_Delay    = input( title = "ONOFF_TIME_Delay" , type = input.bool , defval = false , group = "ON=OFF-INDICATOR")
+
+// >> A. all input variable
+
+EMA_SHORT           = input( title = "EMA_SHORT"        , type = input.integer , defval = 8 , group = "EMA CONFIG")
+EMA_MIDDLE_LONG     = input( title = "EMA_MIDDLE_LONG"  , type = input.integer , defval = 14 , group = "EMA CONFIG")
+EMA_MIDDLE_SHORT    = input( title = "EMA_MIDDLE_SHORT" , type = input.integer , defval = 14 , group = "EMA CONFIG")
+EMA_LONG            = input( title = "EMA_LONG"         , type = input.integer , defval = 100 , group = "EMA CONFIG")
+SD_EMA_MIDDLE_STOP  = input( title = "SD_EMA_STOP"      , type = input.integer , defval = 0 , group = "EMA CONFIG")
+
+// >> B. plot ema line
+EMA_SHORT_LINE          = ema(close,EMA_SHORT)
+EMA_MIDDLE_LINE_LONG    = sma(close,EMA_MIDDLE_LONG)
+EMA_MIDDLE_LINE_SHORT   = sma(close,EMA_MIDDLE_SHORT)
+EMA_LONG_LINE           = ema(close,EMA_LONG)
+EMA_LONG_LINE100        = ema(close,30)
+
+plot(EMA_SHORT_LINE         , "EMA_SHORT_LINE"          , color=color.green )
+plot(EMA_MIDDLE_LINE_LONG   , "EMA_MIDDLE_LINE_LONG"    , color=color.yellow)
+plot(EMA_MIDDLE_LINE_SHORT  , "EMA_MIDDLE_LINE_SHORT"   , color=color.purple)
+plot(EMA_LONG_LINE          , "EMA_LONG_LINE"           , color=color.white )
+plot(EMA_LONG_LINE100       , "EMA_LONG_LINE100"        , color=color.silver)
+
+//plot EMA Middle SIGNALS
+long_shape_EMA_MIDDLE   =  close >= EMA_MIDDLE_LINE_LONG
+short_shape_EMA_MIDDLE  =  close < EMA_MIDDLE_LINE_SHORT
+plotchar(long_shape_EMA_MIDDLE  , "long_shape_EMA_MIDDLE")
+plotchar(short_shape_EMA_MIDDLE , "short_shape_EMA_MIDDLE")
+
+//SIGNAL EMA_MIDDLE 
+SIGNALS_EMA_MIDDLE = long_shape_EMA_MIDDLE == 1   ? true :short_shape_EMA_MIDDLE == 1 ? false : na
+plotchar(SIGNALS_EMA_MIDDLE , "SIGNALS_EMA_MIDDLE")
+
+// ========================  Create MACD ==============================
+//
+// Getting inputs
+fast_length = input(title="MACD Fast"   , type=input.integer, defval=12)
+slow_length = input(title="MACD Slow"   , type=input.integer, defval=26)
+src = input(title="Source", type=input.source, defval=close)
+signal_length = input(title="Signal Smoothing"  , type=input.integer    , minval = 1    , maxval = 50, defval = 9   )
+sma_source = input(title="Oscillator MA Type"   , type=input.string     , defval="EMA"  , options=["SMA", "EMA"]    )
+sma_signal = input(title="Signal Line MA Type"  , type=input.string     , defval="EMA"  , options=["SMA", "EMA"]    )
+// Calculating
+fast_ma = sma_source == "SMA" ? sma(src, fast_length) : ema(src, fast_length)
+slow_ma = sma_source == "SMA" ? sma(src, slow_length) : ema(src, slow_length)
+macd = fast_ma - slow_ma
+signal = sma_signal == "SMA" ? sma(macd, signal_length) : ema(macd, signal_length)
+hist = macd - signal
+
+//plot MACD SIGNALS
+long_shape_MACD =  macd >= signal
+short_shape_MACD = macd < signal
+plotchar(long_shape_MACD , "long_shape_MACD")
+plotchar(short_shape_MACD , "short_shape_MACD")
+//plotshape(long_shape_MACD, style=shape.labelup, location=location.belowbar, color=color.green, size=size.tiny, title="Long Entry", text="L_MACD", textcolor=color.white)
+//plotshape(short_shape_MACD, style=shape.labeldown, location=location.abovebar, color=color.red, size=size.tiny, title="Short Entry", text="S_MACD", textcolor=color.white)
+
+//SIGNAL MACD
+SIGNALS_MACD = long_shape_MACD == 1   ? true :short_shape_MACD == 1 ? false : na
+plotchar(SIGNALS_MACD , "SIGNALS_MACD ")
+
+// ====================== Create BB BAND ========================================
+//
+length_BB   = input(20, minval=1)
+src_BB      = input(close, title="Source")
+mult_BB     = input(2.0, minval=0.001, maxval=50, title="StdDev")
+basis_BB    = sma(src_BB, length_BB)
+dev_BB      = mult_BB * stdev(src_BB, length_BB)
+upper_BB    = basis_BB + dev_BB
+lower_BB    = basis_BB - dev_BB
+offset      = input(0, "Offset", type = input.integer, minval = -500, maxval = 500)
+plot(basis_BB, "Basis", color=#FF6D00, offset = offset)
+p1_BB       = plot(upper_BB, "Upper", color=#2962FF, offset = offset)
+p2_BB       = plot(lower_BB, "Lower", color=#2962FF, offset = offset)
+fill(p1_BB, p2_BB, title = "Background", color=color.rgb(33, 150, 243, 95))
+
+//SIGNAL BB BAND
+long_shape_BBBAND = close >= basis_BB //and SIGNALS_MACD == true//crossover(close,basis_BB)
+short_shape_BBBAND = close < basis_BB //and SIGNALS_MACD == false//crossunder(close,basis_BB)
+//plotshape(long_shape_BBBAND, style=shape.labelup, location=location.belowbar, color=color.green, size=size.tiny, title="Long Entry", text="L_BBAND", textcolor=color.white)
+//plotshape(short_shape_BBBAND, style=shape.labeldown, location=location.abovebar, color=color.red, size=size.tiny, title="Short Entry", text="S_BBAND", textcolor=color.white)
+SIGNALS_BBBAND = long_shape_BBBAND == 1   ? true :short_shape_BBBAND == 1 ? false : na
+plotchar(SIGNALS_BBBAND , "SIGNALS_BBBAND")
+plotchar(long_shape_BBBAND , "long_shape_BBBAND")
+
+//============================ EMA MIDDLE and Basis ===============================
+DIF_EMAMID_BASIS = abs((abs(EMA_MIDDLE_LINE_LONG - basis_BB))/EMA_MIDDLE_LINE_LONG*100)
+plotchar(DIF_EMAMID_BASIS , "%DIF_EMA_MID-BASIS")
+
+DIF_MACD_SIGNALS = abs(((signal - macd)))
+plotchar(DIF_MACD_SIGNALS , "DIF_MACD_SIGNALS")
+plotchar(signal , "signal")
+plotchar(macd , "macd")
+
+// =============================LONG SHORT=============================================================
+// >> F. Create Positions
+// >> F.1 LONG POSITION
+
+EACHLOTS = input( defval = 4 , title = "LOTS" , type = input.integer , group = "POSITION CONFIG" )
+LEVERAGE = input( defval = 9 , title = "Leverage" , type = input.integer , group = "POSITION CONFIG"  )
+
+//CAL_POSITION_SIZE = (strategy.equity/EACHLOTS) * LEVERAGE
+CAL_POSITION_SIZE = (10000/1) * LEVERAGE // TEST
+plotchar(CAL_POSITION_SIZE , "CAL_POSITION_SIZE")
+CONTRACT_SIZE = round(CAL_POSITION_SIZE/close,6)
+plotchar(CONTRACT_SIZE , "CONTRACT_SIZE")
+plotchar(strategy.equity , "strategy.equity")
+
+//===========================================MACD1MOREMACD2T=================================================
+//test1 = linreg(close, 3, 0) //→ series[float]
+//plotchar(test1, "linreg")
+MACD1MOREMACD2 = macd > macd[1] ? 1 : macd < macd[1] ? 0 : na
+plotchar(MACD1MOREMACD2, "MACD > MACD 1 ?")
+
+//==================== SUMMARY_SIGNALS ==============================
+//
+
+SUMMARY_SIGNALS =  SIGNALS_MACD == true and SIGNALS_BBBAND == true and SIGNALS_EMA_MIDDLE == true and MACD1MOREMACD2 == 1 ? true :  SIGNALS_MACD == false and SIGNALS_BBBAND == false and SIGNALS_EMA_MIDDLE == false  and MACD1MOREMACD2 == 0? false : na
+LONG_SHAPE = (SUMMARY_SIGNALS == true ) and (strategy.position_size  <= 0) and ONOFF_LONG == true
+SHORT_SHAPE = (SUMMARY_SIGNALS == false ) and (strategy.position_size  >= 0) and ONOFF_SHORT == true
+plotshape(LONG_SHAPE, style=shape.labelup, location=location.belowbar, color=color.green, size=size.tiny, title="Long Entry", text="LONG", textcolor=color.white)
+plotshape(SHORT_SHAPE, style=shape.labeldown, location=location.abovebar, color=color.red, size=size.tiny, title="Short Entry", text="SHORT", textcolor=color.white)
+plotchar(SUMMARY_SIGNALS , "SUMMARY_SIGNALS ")
+
+// ====================== TRAILING STOP ================================
+// =====================================================================
+
+trailPerc = input(title="Trailing Stop (%)", type=input.float, minval=0.0, step=1, defval=13) * 0.01
+
+//detect what was last signal (long or short)
+long_short = 0
+long_last = ((SUMMARY_SIGNALS == true) and ONOFF_LONG == true) and (nz(long_short[1]) == 0 or nz(long_short[1]) == -1)
+short_last = ((SUMMARY_SIGNALS == false) and ONOFF_SHORT == true) and (nz(long_short[1]) == 0 or nz(long_short[1]) == 1)
+long_short := long_last  ? 1 : short_last   ? -1 : long_short[1]
+
+//calculate tsl position
+longStopPrice = 0.0
+shortStopPrice = 0.0
+longStopPrice := if long_short==1 //and strategy.position_size  > 0 
+    stopValue = close * (1 - trailPerc)
+    max(stopValue, longStopPrice[1])
+else
+    0
+shortStopPrice := if long_short==-1 //and strategy.position_size  < 0 
+    stopValue = close * (1 + trailPerc)
+    min(stopValue, shortStopPrice[1])
+else
+    999999
+    
+//plot tsl
+plot(long_short==1 ? longStopPrice : na, style=plot.style_linebr, color=color.green, linewidth=1, title="Long Trailing Stop") //2
+plot(long_short==-1 ? shortStopPrice : na, style=plot.style_linebr, color=color.red, linewidth=1, title="Short Trailing Stop") //3
+
+//remove first bar for SL/TP (you can't enter a trade at bar close THEN hit your SL on that same bar)
+longBar1 = barssince(long_last)
+longBar2 = longBar1 >= 1 ? true : false
+shortBar1 = barssince(short_last)
+shortBar2 = shortBar1 >= 1 ? true : false
+
+//check for TSL hit during a bar
+longSLhit = long_short==1 and longBar2 and low < longStopPrice[1] and strategy.position_size  > 0 
+plotshape(longSLhit, style=shape.labelup, location=location.belowbar, color=color.gray, size=size.tiny, title="Long TSL", text="Long TSL", textcolor=color.white) //4
+shortSLhit = long_short==-1 and shortBar2 and high > shortStopPrice[1] and strategy.position_size  < 0 
+plotshape(shortSLhit, style=shape.labeldown, location=location.abovebar, color=color.gray, size=size.tiny, title="Short TSL", text="Short TSL", textcolor=color.white) //5
+
+//reset long_short if SL/TP hit during bar
+long_short := (long_short==1 or long_short==0) and longBar2 and longSLhit ? 0 : (long_short==-1 or long_short==0) and shortBar2 and shortSLhit ? 0 : long_short
+// Check Position
+if strategy.position_size  == 0
+    long_short := 0
+//calculate if TSL has changed from last bar
+longDiff = long_short==1 and longBar2 and longStopPrice != longStopPrice[1] ? true : false
+shortDiff = long_short==-1 and shortBar2 and shortStopPrice != shortStopPrice[1] ? true : false
+// =====================================================================
+
+//================================== CALL BACK RATE : Trailing STOP =============================
+//LONG
+CB_long = 0.0
+update_cb = 0.0
+if ((SUMMARY_SIGNALS == true) and  ONOFF_LONG == true ) or strategy.position_size  > 0 
+    update_cb := close * 1.03
+if update_cb != 0
+    CB_long := nz(CB_long[1]) == 0 ? update_cb : nz(CB_long[1]) != 0 ? CB_long[1] : 0
+plotchar(CB_long , "CB_long")
+
+//SHORT
+CB_short = 0.0
+update_cb_short = 0.0
+if ((SUMMARY_SIGNALS == false) and ONOFF_SHORT == true ) or strategy.position_size  < 0 
+    update_cb_short := close * 0.97
+if update_cb_short != 0
+    CB_short := nz(CB_short[1]) == 0 ? update_cb_short : nz(CB_short[1]) != 0 ? CB_short[1] : 0
+plotchar(CB_short, "CB_short")
+
+//LONG HIGHT
+close_CB_long = 0.0
+if nz(close_CB_long[1]) != 0 and strategy.position_size  > 0 and  ONOFF_LONG == true
+    close_CB_long := close_CB_long[1]
+if (close >= CB_long ) and CB_long  != 0  and strategy.position_size  >= 0 and close_CB_long[1] < close
+    close_CB_long := close
+plotchar(close_CB_long, "close_CB_long")
+
+//SHORT HIGHT
+close_CB_short = 0.0
+if nz(close_CB_short[1]) != 0 and strategy.position_size  < 0 and ONOFF_SHORT == true
+    close_CB_short := close_CB_short[1]
+if (close <= CB_short ) and CB_short  != 0  and strategy.position_size  <= 0 and ( close_CB_short[1] > close or nz(close_CB_short[1]) == 0 )
+    close_CB_short := close
+plotchar(close_CB_short, "close_CB_short")
+
+//=============================delay 5s TiME LONH SHORT===========================================================
+plotchar(strategy.position_size,"strategy.position_size")
+timedelay_LONG = 0.0
+timecheck_LONG = 0.0
+if ((SUMMARY_SIGNALS == true)  or strategy.position_size  > 0 ) 
+    timedelay_LONG:= time + 300000.0
+if timedelay_LONG != 0
+    timecheck_LONG := nz(timecheck_LONG[1]) == 0 ? timedelay_LONG : nz(timecheck_LONG[1]) != 0 ? timecheck_LONG[1] : 0
+plotchar(timecheck_LONG, "timecheck_LONG")
+
+timedelay_SHORT = 0.0
+timecheck_SHORT = 0.0
+if  ((SUMMARY_SIGNALS == false)  or strategy.position_size  < 0)
+    timedelay_SHORT:= time + 300000.0
+if timedelay_SHORT != 0
+    timecheck_SHORT := nz(timecheck_SHORT[1]) == 0 ? timedelay_SHORT : nz(timecheck_SHORT[1]) != 0 ? timecheck_SHORT[1] : 0
+plotchar(timecheck_SHORT, "timecheck_SHORT")
+plotchar(TIME_NOW,"timenow")
+
+//================== ENTRY  EXIT ================================
+
+if (SUMMARY_SIGNALS == true) and strategy.position_size  <= 0 and ( ONOFF_TIME_Delay == true ? time >= timecheck_LONG : true ) //แก้ไข
+    if strategy.position_size  < 0
+        strategy.close("SHORT") //, alert_message = "CLOSE SHORT"
+    if ONOFF_LONG == true
+        timecheck_LONG := 0.0
+        strategy.entry(id="LONG",long=true,qty= CONTRACT_SIZE , alert_message = "OPEN LONG")
+        //strategy.exit(id="EX. LONG",from_entry = "LONG" , profit = ATR_TP , stop = ATR_SL , alert_message = "{{ticket}} , CLOSE LONG , {{strategy.order.contracts}} , {{strategy.position_size}}")
+        //strategy.exit(id="trailng LONG",from_entry = "LONG", stop=longStopPrice )
+        strategy.exit(id="SL LONG",from_entry = "LONG" , stop = (close * (1 - 1/LEVERAGE)) ,alert_message = "CLOSE LONG" )
+    
+// >> F.2 SHORT POSITION
+if (SUMMARY_SIGNALS == false) and strategy.position_size >= 0 and ( ONOFF_TIME_Delay == true ? time >= timecheck_SHORT : true ) //แก้ไข
+    if strategy.position_size  > 0
+        strategy.close("LONG") //, alert_message = "CLOSE LONG"
+    if ONOFF_SHORT == true
+        timecheck_SHORT := 0.0
+        strategy.entry(id="SHORT",long=false,qty= CONTRACT_SIZE , alert_message = "OPEN SHORT")
+        //strategy.exit(id="EX SHORT",from_entry = "SHORT" , profit = ATR_TP , stop = ATR_SL , alert_message = "{{ticket}} , CLOSE SHORT , {{strategy.order.contracts}} , {{strategy.position_size}}")
+        //strategy.exit(id="trailng SHORT",from_entry = "SHORT", stop=shortStopPrice) 
+        strategy.exit(id="SL SHORT",from_entry = "SHORT" , stop = (close * (1 + 1/LEVERAGE)) ,alert_message = "CLOSE SHORT" )
+    
+// ==================Trailing STOP======================================
+if (ONOFF_TLS == true) and (longSLhit == 1) and strategy.position_size > 0 and MACD1MOREMACD2 == 0 //and close > CB_long and CB_long != 0.0
+    timecheck_LONG := 0.0
+    strategy.close("LONG" , alert_message = "CLOSE LONG" , comment = "LONG TSL" )
+if (ONOFF_TLS == true) and (shortSLhit == 1) and strategy.position_size < 0 and MACD1MOREMACD2 == 1//and close < CB_short and CB_short != 0.0
+    timecheck_SHORT := 0.0
+    strategy.close("SHORT" , alert_message = "CLOSE SHORT" , comment = "SHORT TSL")
+// ======================================================================
+
+// ==================STOP EMA======================================
+if (ONOFF_EMA_MIDDLE == true) and (short_shape_EMA_MIDDLE == 1) and strategy.position_size > 0  and close < close_CB_long and close_CB_long != 0.0 and MACD1MOREMACD2 == 0  and DIF_EMAMID_BASIS >= SD_EMA_MIDDLE_STOP
+    timecheck_LONG := 0.0
+    strategy.close("LONG" , alert_message = "CLOSE LONG" , comment = "LONG EMA" )
+if (ONOFF_EMA_MIDDLE == true) and (long_shape_EMA_MIDDLE == 1) and strategy.position_size < 0 and close > close_CB_short  and close_CB_short  != 0.0 and MACD1MOREMACD2 == 1 and DIF_EMAMID_BASIS >= SD_EMA_MIDDLE_STOP
+    timecheck_SHORT := 0.0
+    strategy.close("SHORT" , alert_message = "CLOSE SHORT" , comment = "SHORT EMA")
+// ======================================================================
+//basis_BB
+if (ONOFF_BB_Basis == true) and (close <= (basis_BB*1.01)) and strategy.position_size > 0 and close < close_CB_long and close_CB_long != 0.0 and MACD1MOREMACD2 == 0
+    timecheck_LONG := 0.0
+    strategy.close("LONG" , alert_message = "CLOSE LONG" , comment = "LONG BB" )
+if (ONOFF_BB_Basis == true) and (close >= (basis_BB*0.99)) and strategy.position_size < 0 and close > close_CB_short and close_CB_short!= 0.0 and MACD1MOREMACD2 == 1
+    timecheck_SHORT := 0.0
+    strategy.close("SHORT" , alert_message = "CLOSE SHORT" , comment = "SHORT BB" )
